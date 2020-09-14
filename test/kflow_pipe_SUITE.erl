@@ -17,7 +17,7 @@
 init_per_suite(Config) ->
   application:ensure_all_started(prometheus),
   snabbkaffe:fix_ct_logging(),
-  [{proper, [ {timeout, 10000}
+  [{proper, [ {timeout, 100000}
             , {numtests, 100}
             ]}
    | Config].
@@ -25,7 +25,7 @@ init_per_suite(Config) ->
 end_per_suite(_Config) ->
   ok.
 
-suite() -> [{timetrap, {seconds, 300}}].
+suite() -> [{timetrap, {seconds, 600}}].
 
 %%====================================================================
 %% Testcases
@@ -39,7 +39,7 @@ gen_map_prop() ->
   MaxNumMaps = 10,
   ?forall_trace(
      %% Input data:
-     {Messages, NumMaps, FeedTimeout}, {messages(), range(1, MaxNumMaps), feed_timeout(MaxDelay)},
+     {Messages, NumMaps, FeedTimeout}, {messages(1), range(1, MaxNumMaps), feed_timeout(MaxDelay)},
      %% Snabbkaffe settings:
      #{bucket => length(Messages)},
      %% Run stage:
@@ -86,6 +86,11 @@ all_behaviors_prop() ->
          true
      end).
 
+t_all_behaviors({init, Config}) ->
+  [{proper, [ {timeout, 100000}
+            , {numtests, 1000}
+            ]}
+   |lists:keydelete(proper, 1, Config)];
 t_all_behaviors(Config) when is_list(Config) ->
   ?run_prop(Config, all_behaviors_prop()).
 
@@ -331,13 +336,17 @@ kfnode(MaxBufferSize) ->
                  , {1, {filter, kflow_test_filter, #{}}}
                  , {1, {mfd, kflow_test_filter, #{}}}
                  , {1, {unfold, kflow_test_unfold, #{}}}
+                 , {1, {demux, fun(Offset, _) -> Offset rem 5 end}}
                  ])).
 
 message() ->
   noshrink(resize(5, list(range($A, $Z)))).
 
 messages() ->
-  ?SIZED(Size, resize(1 * Size, list({?default_route, message()}))).
+  messages(4).
+
+messages(Num) ->
+  ?SIZED(Size, resize(Num * Size, list({?default_route, message()}))).
 
 feed_timeout(MinTimeout) ->
   frequency([ {1, infinity}
