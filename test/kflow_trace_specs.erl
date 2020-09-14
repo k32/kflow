@@ -125,7 +125,9 @@ message_order(PipeDefn, Trace) ->
                      {aggregate, kflow_test_aggregate} ->
                        kflow_test_aggregate_in;
                      {unfold, kflow_test_unfold} ->
-                       kflow_test_unfold_seen_message
+                       kflow_test_unfold_seen_message;
+                     {kflow_kafka_commit, undefined} ->
+                       kflow_commit_seen_message
                    end,
             do_check_message_order(Kind, Id, Trace)
         end,
@@ -188,13 +190,15 @@ do_check_message_conservation( [{FilterBehavior, kflow_test_filter, Config}|Rest
       do_check_message_conservation(Rest, MyMsg, Trace);
     #{alive := false} ->
       %% The message was eliminated, check that the downstream nodes
-      %% didn't get it. Check that only the current layer's message
-      %% got matched:
+      %% (with exception of committer node) didn't get it. Check that
+      %% only the current layer's message got matched:
       ?assertMatch( [{singleton, _}]
                   , ?find_downstream( MyMsg
-                                    , #{ offset := Offset
-                                       , id     := Id1
-                                       } when Id1 > MyId
+                                    , #{ offset    := Offset
+                                       , id        := Id1
+                                       , ?snk_kind := DownstreamKind
+                                       } when Id1 > MyId andalso
+                                              DownstreamKind =/= kflow_commit_seen_message
                                     , Trace
                                     ))
   end;
@@ -257,7 +261,12 @@ do_check_message_conservation( [{unfold, kflow_test_unfold, Config}|Rest]
   %% Payload should be passed down unchanged
   ?assertEqual(Payload, maps:get(payload, MyMsg)),
   %% Check the downstream:
-  do_check_message_conservation(Rest, MyMsg, Trace).
+  do_check_message_conservation(Rest, MyMsg, Trace);
+do_check_message_conservation( [{kflow_kafka_commit, undefined, _Config}]
+                             , _UpstreamMsg
+                             , _Trace
+                             ) ->
+  true.
 
 -spec replicate(non_neg_integer(), A) -> [A].
 replicate(0, _) ->

@@ -15,6 +15,7 @@
 %%====================================================================
 
 init_per_suite(Config) ->
+  application:ensure_all_started(prometheus),
   snabbkaffe:fix_ct_logging(),
   [{proper, [ {timeout, 10000}
             , {numtests, 100}
@@ -69,7 +70,7 @@ all_behaviors_prop() ->
      #{bucket => length(Messages), timeout => ?dt},
      %% Run stage:
      begin
-       PipeDefn = add_node_ids(Specs),
+       PipeDefn = add_node_ids(Specs) ++ committer_node(),
        {ok, Pipe, Feed} = kflow_pipe:start_link(#{ id         => [test_pipe]
                                                  , definition => PipeDefn
                                                  }),
@@ -384,3 +385,19 @@ feed_pipe(Feed, [Data0|Cont], Offset0) ->
   feed_pipe(Feed, payload_gen:next(Cont), Offset);
 feed_pipe(_, ?end_of_stream, Offset) ->
   Offset.
+
+committer_node() ->
+  ID = 9999,
+  CommitFun = fun(Offset) ->
+                  ?tp(kflow_commit_seen_message,
+                      #{ offset => Offset
+                       , id     => ID
+                       })
+              end,
+  Cfg = #{ commit_fun => CommitFun
+         , topic      => <<"fake_topic">>
+         , partition  => 0
+         , group_id   => <<"fake_group_id">>
+         , id         => ID
+         },
+  [{kflow_kafka_commit, undefined, Cfg}].
